@@ -14,18 +14,14 @@ abstract class Product {
 
     public String getName() { return name; }
     public double getPrice() { return price; }
-    public int getStockQuantity() { return stock; }
+    public int getStock() { return stock; }
 
-    public void reduceStock(int amount) {
-        stock -= amount;
+    public void takeFromStock(int qty) {
+        stock -= qty;
     }
 
     public abstract boolean isExpired();
     public abstract boolean needsShipping();
-
-    public String toString() {
-        return name + " - EGP " + price + " (Stock: " + stock + ")";
-    }
 }
 
 interface Shippable {
@@ -68,6 +64,7 @@ class DigitalProduct extends Product {
     public DigitalProduct(String name, double price, int stock) {
         super(name, price, stock);
     }
+
     public boolean isExpired() { return false; }
     public boolean needsShipping() { return false; }
 }
@@ -84,122 +81,126 @@ class CartItem {
     public Product getProduct() { return p; }
     public int getQty() { return qty; }
     public double getTotal() { return p.getPrice() * qty; }
-    public void addQty(int more) { qty += more; }
+    public void addMore(int extra) { qty += extra; }
 }
 
 class Customer {
-    private String fullName;
-    private double wallet;
+    private String name;
+    private double balance;
 
-    public Customer(String fullName, double wallet) {
-        this.fullName = fullName;
-        this.wallet = wallet;
+    public Customer(String name, double balance) {
+        this.name = name;
+        this.balance = balance;
     }
 
-    public String getName() { return fullName; }
-    public double getBalance() { return wallet; }
-    public void pay(double amount) {
-        if (amount > wallet) throw new RuntimeException("Not enough cash");
-        wallet -= amount;
+    public String getName() { return name; }
+    public double getBalance() { return balance; }
+
+    public void pay(double amt) {
+        balance -= amt;
     }
 }
 
 class Cart {
     private Map<String, CartItem> items = new HashMap<>();
 
-    public void add(Product p, int q) {
-        if (p.getStockQuantity() < q) throw new RuntimeException("Stock too low");
-        if (p.isExpired()) throw new RuntimeException("Oops! Product expired");
+    public void add(Product p, int qty) {
+        if (p.getStock() < qty) throw new RuntimeException("Oops: stock too low");
+        if (p.isExpired()) throw new RuntimeException("Sorry, product expired");
 
         String key = p.getName();
         if (items.containsKey(key)) {
-            CartItem ci = items.get(key);
-            if (ci.getQty() + q > p.getStockQuantity()) throw new RuntimeException("Too much of that product");
-            ci.addQty(q);
+            CartItem existing = items.get(key);
+            int combined = existing.getQty() + qty;
+            if (combined > p.getStock()) throw new RuntimeException("Trying to add too much");
+            existing.addMore(qty);
         } else {
-            items.put(key, new CartItem(p, q));
+            items.put(key, new CartItem(p, qty));
         }
     }
 
-    public boolean empty() { return items.isEmpty(); }
-    public Collection<CartItem> all() { return items.values(); }
-    public void clear() { items.clear(); }
+    public boolean isEmpty() { return items.isEmpty(); }
+    public Collection<CartItem> getAll() { return items.values(); }
+    public void reset() { items.clear(); }
 
-    public double totalBeforeShipping() {
-        return items.values().stream().mapToDouble(CartItem::getTotal).sum();
+    public double subtotal() {
+        double total = 0;
+        for (CartItem item : items.values()) total += item.getTotal();
+        return total;
     }
 
     public List<Shippable> getShippables() {
-        List<Shippable> list = new ArrayList<>();
-        for (CartItem ci : items.values()) {
-            if (ci.getProduct().needsShipping()) {
-                Shippable s = (Shippable) ci.getProduct();
-                for (int i = 0; i < ci.getQty(); i++) list.add(s);
+        List<Shippable> result = new ArrayList<>();
+        for (CartItem item : items.values()) {
+            if (item.getProduct().needsShipping()) {
+                for (int i = 0; i < item.getQty(); i++) {
+                    result.add((Shippable) item.getProduct());
+                }
             }
         }
-        return list;
+        return result;
     }
 }
 
 class ShippingService {
-    double ship(List<Shippable> items) {
+    public double handle(List<Shippable> items) {
+        if (items.isEmpty()) return 0;
+
         double totalWeight = 0;
-        Map<String, Integer> count = new LinkedHashMap<>();
-        Map<String, Double> unitWeight = new HashMap<>();
+        System.out.println("\n==Items to ship==");
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        Map<String, Double> weights = new HashMap<>();
 
-        for (Shippable s : items) {
-            count.put(s.getName(), count.getOrDefault(s.getName(), 0) + 1);
-            unitWeight.put(s.getName(), s.getWeight());
+        for (Shippable item : items) {
+            counts.put(item.getName(), counts.getOrDefault(item.getName(), 0) + 1);
+            weights.put(item.getName(), item.getWeight());
         }
 
-        System.out.println("==Shipment notice==");
-        for (String name : count.keySet()) {
-            int qty = count.get(name);
-            double weight = unitWeight.get(name);
-            System.out.println(qty + "x " + name + " " + (int)(weight * 1000) + "g");
-            totalWeight += qty * weight;
+        for (String name : counts.keySet()) {
+            int qty = counts.get(name);
+            double w = weights.get(name);
+            System.out.println(qty + "x " + name + " " + (int)(w * 1000) + "g");
+            totalWeight += qty * w;
         }
-        System.out.println("Total package weight " + totalWeight + "kg\n");
+
+        System.out.println("Total weight to ship: " + totalWeight + "kg");
         return Math.ceil(totalWeight * 12);
     }
 }
 
-class StoreSystem {
-    ShippingService shipper = new ShippingService();
+class FawryApp {
+    private ShippingService shipper = new ShippingService();
 
-    void checkout(Customer c, Cart cart) {
-        if (cart.empty()) throw new RuntimeException("Cart's empty");
+    public void checkout(Customer user, Cart cart) {
+        if (cart.isEmpty()) throw new RuntimeException("Nothing in cart");
 
-        for (CartItem i : cart.all()) {
-            Product p = i.getProduct();
-            if (p.isExpired()) throw new RuntimeException(p.getName() + " expired");
-            if (p.getStockQuantity() < i.getQty()) throw new RuntimeException("No enough: " + p.getName());
+        for (CartItem item : cart.getAll()) {
+            Product p = item.getProduct();
+            if (p.isExpired()) throw new RuntimeException(p.getName() + " is expired");
+            if (p.getStock() < item.getQty()) throw new RuntimeException("Out of stock: " + p.getName());
         }
 
-        double subtotal = cart.totalBeforeShipping();
-        List<Shippable> toShip = cart.getShippables();
-        double shipping = toShip.isEmpty() ? 0 : shipper.ship(toShip);
-        double total = subtotal + shipping;
+        double subtotal = cart.subtotal();
+        List<Shippable> shipItems = cart.getShippables();
+        double shipCost = shipper.handle(shipItems);
+        double finalTotal = subtotal + shipCost;
 
-        if (c.getBalance() < total) throw new RuntimeException("Not enough balance");
+        if (user.getBalance() < finalTotal) throw new RuntimeException("Can't pay that much");
 
-        // reduce stock
-        for (CartItem i : cart.all()) i.getProduct().reduceStock(i.getQty());
-        c.pay(total);
+        for (CartItem item : cart.getAll()) item.getProduct().takeFromStock(item.getQty());
+        user.pay(finalTotal);
 
-        // print receipt
-        System.out.println("==Checkout receipt==");
-        for (CartItem i : cart.all()) {
-            System.out.println(i.getQty() + "x " + i.getProduct().getName() + " " + (int) i.getTotal());
+        System.out.println("\n==Receipt==");
+        for (CartItem item : cart.getAll()) {
+            System.out.println(item.getQty() + "x " + item.getProduct().getName() + " " + (int)item.getTotal());
         }
-        System.out.println("----------------------");
-        System.out.println("Subtotal " + (int)subtotal);
-        System.out.println("Shipping " + (int)shipping);
-        System.out.println("Amount " + (int)total);
-        System.out.println("Left in wallet: " + (int)c.getBalance());
-        System.out.println("END.\n");
+        System.out.println("Subtotal: " + (int)subtotal);
+        System.out.println("Shipping: " + (int)shipCost);
+        System.out.println("Total Paid: " + (int)finalTotal);
+        System.out.println("Wallet Left: " + (int)user.getBalance());
+        System.out.println("----\n");
 
-        cart.clear();
+        cart.reset();
     }
 }
 
@@ -208,49 +209,49 @@ public class Main {
         Product cheese = new PerishableProduct("Cheese", 100, 5, LocalDate.now().plusDays(3), 0.2);
         Product biscuits = new PerishableProduct("Biscuits", 150, 2, LocalDate.now().plusDays(5), 0.7);
         Product tv = new PhysicalProduct("TV", 5000, 3, 10);
-        Product mobileCard = new DigitalProduct("Mobile Card", 50, 20);
+        Product card = new DigitalProduct("Mobile Card", 50, 20);
 
-        Customer user = new Customer("Abdulrahman Shalan", 10000);
+        Customer abdul = new Customer("Abdulrahman Shalan", 10000);
         Cart cart = new Cart();
-        StoreSystem store = new StoreSystem();
+        FawryApp app = new FawryApp();
 
         try {
             cart.add(cheese, 2);
             cart.add(biscuits, 1);
-            cart.add(mobileCard, 1);
-            store.checkout(user, cart);
+            cart.add(card, 1);
+            app.checkout(abdul, cart);
         } catch (Exception e) {
-            System.out.println("Oops: " + e.getMessage());
+            System.out.println("Err: " + e.getMessage());
         }
 
         try {
             cart.add(tv, 3);
-            store.checkout(user, cart);
+            app.checkout(abdul, cart);
         } catch (Exception e) {
-            System.out.println("Oops: " + e.getMessage());
-            cart.clear();
+            System.out.println("Err: " + e.getMessage());
+            cart.reset();
         }
 
         try {
             cart.add(cheese, 20);
-            store.checkout(user, cart);
+            app.checkout(abdul, cart);
         } catch (Exception e) {
-            System.out.println("Oops: " + e.getMessage());
-            cart.clear();
+            System.out.println("Err: " + e.getMessage());
+            cart.reset();
         }
 
         try {
-            store.checkout(user, cart);
+            app.checkout(abdul, cart);
         } catch (Exception e) {
-            System.out.println("Oops: " + e.getMessage());
+            System.out.println("Err: " + e.getMessage());
         }
 
         try {
             Product expired = new PerishableProduct("Old Yogurt", 30, 1, LocalDate.now().minusDays(2), 0.2);
             cart.add(expired, 1);
-            store.checkout(user, cart);
+            app.checkout(abdul, cart);
         } catch (Exception e) {
-            System.out.println("Oops: " + e.getMessage());
+            System.out.println("Err: " + e.getMessage());
         }
     }
 }
