@@ -23,4 +23,4 @@ This project is a simple Java-based e-commerce simulation built for the Fawry Ri
 - No external libraries
 
 ## Sample Output
-![image alt]([https://github.com/shalan2004/FawryAssessment1/blob/main/Screenshot%202025-07-08%20205857.png?raw=true](https://github.com/shalan2004/FawryAssessment1/blob/main/Sample_1.png?raw=true))
+![image alt](https://github.com/shalan2004/FawryAssessment1/blob/main/Sample_1.png?raw=true)
